@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Absensi Mulazamah{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    {% if session.get('admin_id') %}
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
+            <a href="{{ url_for('dashboard') }}" class="text-lg font-bold text-gray-800">Absensi Mulazamah</a>
+            <div class="flex gap-4 text-sm">
+                <a href="{{ url_for('dashboard') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint == 'dashboard' %}text-blue-600 font-semibold{% endif %}">Dashboard</a>
+                <a href="{{ url_for('master_peserta') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint == 'master_peserta' %}text-blue-600 font-semibold{% endif %}">Peserta</a>
+                <a href="{{ url_for('rekap') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint == 'rekap' %}text-blue-600 font-semibold{% endif %}">Rekap</a>
+                <a href="{{ url_for('logout') }}" class="text-red-500 hover:text-red-700">Logout</a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <div class="max-w-6xl mx-auto px-4 py-6">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="mb-4 p-3 rounded {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'error' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

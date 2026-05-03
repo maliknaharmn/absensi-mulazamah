@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Absensi Mulazamah{% endblock %}
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-800">Dashboard</h1>
+    <p class="text-gray-500">Generate link presensi dan pantau kehadiran</p>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h2 class="font-semibold text-blue-800 mb-3">Generate Link Ikhwan</h2>
+        <form method="POST" action="{{ url_for('generate_sesi') }}">
+            <input type="hidden" name="gender" value="ikhwan">
+            <div class="mb-3">
+                <label class="block text-sm text-blue-700 mb-1">Tanggal</label>
+                <input type="date" name="tanggal" min="{{ today }}" required
+                    class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="mb-3">
+                <label class="block text-sm text-blue-700 mb-1">Judul Acara</label>
+                <input type="text" name="judul" placeholder="Mulazamah Pekan 4 - Bab Shalat" required
+                    class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button type="submit"
+                class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium">
+                Generate Link Ikhwan
+            </button>
+        </form>
+    </div>
+
+    <div class="bg-pink-50 border border-pink-200 rounded-lg p-6">
+        <h2 class="font-semibold text-pink-800 mb-3">Generate Link Akhwat</h2>
+        <form method="POST" action="{{ url_for('generate_sesi') }}">
+            <input type="hidden" name="gender" value="akhwat">
+            <div class="mb-3">
+                <label class="block text-sm text-pink-700 mb-1">Tanggal</label>
+                <input type="date" name="tanggal" min="{{ today }}" required
+                    class="w-full px-3 py-2 border border-pink-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">
+            </div>
+            <div class="mb-3">
+                <label class="block text-sm text-pink-700 mb-1">Judul Acara</label>
+                <input type="text" name="judul" placeholder="Mulazamah Pekan 4 - Bab Shalat" required
+                    class="w-full px-3 py-2 border border-pink-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">
+            </div>
+            <button type="submit"
+                class="w-full bg-pink-600 text-white py-2 rounded-lg hover:bg-pink-700 transition font-medium">
+                Generate Link Akhwat
+            </button>
+        </form>
+    </div>
+</div>
+
+{% if sesi_data %}
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Semua Sesi Presensi</h2>
+    {% for item in sesi_data %}
+    <div class="bg-white rounded-lg shadow-sm border mb-4">
+        <div class="p-4 border-b {% if item.sesi.gender == 'ikhwan' %}bg-blue-50{% else %}bg-pink-50{% endif %}">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h3 class="font-semibold text-gray-800">{{ item.sesi.judul_acara }}</h3>
+                    <p class="text-sm text-gray-500">
+                        <span class="{% if item.sesi.gender == 'ikhwan' %}text-blue-600{% else %}text-pink-600{% endif %} font-medium">
+                            {{ item.sesi.gender | title }}
+                        </span>
+                        &bull; {{ item.sesi.tanggal }}
+                        {% if item.is_today %}
+                        <span class="ml-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Hari Ini</span>
+                        {% endif %}
+                        {% if not item.sesi.is_active %}
+                        <span class="ml-1 px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full text-xs">Ditutup</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="flex gap-3 text-sm">
+                    <span class="text-green-600 font-medium">{{ item.hadir }} Hadir</span>
+                    <span class="text-yellow-600 font-medium">{{ item.izin }} Izin</span>
+                    {% if item.izin_menunggu > 0 %}
+                    <span class="text-orange-500 font-medium">{{ item.izin_menunggu }} Menunggu</span>
+                    {% endif %}
+                    <span class="text-red-500 font-medium">{{ item.alpha }} Alpha</span>
+                </div>
+            </div>
+        </div>
+
+        {% if item.kehadiran %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-600">
+                    <tr>
+                        <th class="text-left px-4 py-2 font-medium">Nama</th>
+                        <th class="text-left px-4 py-2 font-medium">No HP</th>
+                        <th class="text-left px-4 py-2 font-medium">Status</th>
+                        <th class="text-left px-4 py-2 font-medium">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for k in item.kehadiran %}
+                    <tr class="border-t hover:bg-gray-50">
+                        <td class="px-4 py-2">{{ k.nama_lengkap }}</td>
+                        <td class="px-4 py-2 text-gray-500 text-xs">{{ k.no_hp or '-' }}</td>
+                        <td class="px-4 py-2">
+                            {% if k.izin_menunggu %}
+                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">Izin (Menunggu)</span>
+                            {% elif k.status_akhir == 'hadir_offline' %}
+                            <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Hadir Offline</span>
+                            {% elif k.status_akhir == 'hadir_online' %}
+                            <span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">Hadir Online</span>
+                            {% elif k.status_akhir == 'izin_disetujui' %}
+                            <span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">Izin</span>
+                            {% elif k.status_akhir == 'alpha' %}
+                            <span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">Alpha</span>
+                            {% endif %}
+                            {% if k.alasan_izin %}
+                            <p class="text-xs text-gray-400 mt-1">{{ k.alasan_izin }}</p>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2">
+                            {% if k.izin_menunggu %}
+                            <form method="POST" action="{{ url_for('approve_izin') }}" class="inline">
+                                <input type="hidden" name="kehadiran_id" value="{{ k.id }}">
+                                <input type="hidden" name="action" value="approve">
+                                <button type="submit" class="text-green-600 hover:text-green-800 text-xs font-medium">Setujui</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('approve_izin') }}" class="inline ml-2">
+                                <input type="hidden" name="kehadiran_id" value="{{ k.id }}">
+                                <input type="hidden" name="action" value="reject">
+                                <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-medium">Tolak</button>
+                            </form>
+                            {% endif %}
+                            <button onclick="openEditModal('{{ k.id }}', '{{ k.status_akhir }}', '{{ k.izin_menunggu }}')"
+                                class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2">Edit</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-gray-400 text-sm">Belum ada yang mengisi presensi</div>
+        {% endif %}
+
+        {% if item.sesi.is_active %}
+        <div class="p-3 border-t bg-gray-50 flex justify-end">
+            <form method="POST" action="{{ url_for('close_sesi') }}">
+                <input type="hidden" name="sesi_id" value="{{ item.sesi.id }}">
+                <button type="submit" class="text-orange-600 hover:text-orange-800 text-xs font-medium">Tutup Sesi</button>
+            </form>
+        </div>
+        {% else %}
+        <div class="p-3 border-t bg-gray-50 flex justify-end">
+            <form method="POST" action="{{ url_for('delete_sesi') }}"
+                  onsubmit="return confirm('Yakin hapus sesi ini? Semua data kehadiran di sesi ini akan ikut terhapus.')">
+                <input type="hidden" name="sesi_id" value="{{ item.sesi.id }}">
+                <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-medium">Hapus Sesi</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Daftar Link Presensi</h2>
+    <div class="bg-white rounded-lg shadow-sm border overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+                <tr>
+                    <th class="text-left px-4 py-2 font-medium">Tanggal</th>
+                    <th class="text-left px-4 py-2 font-medium">Gender</th>
+                    <th class="text-left px-4 py-2 font-medium">Judul</th>
+                    <th class="text-left px-4 py-2 font-medium">Status</th>
+                    <th class="text-left px-4 py-2 font-medium">Link</th>
+                    <th class="text-left px-4 py-2 font-medium">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sesi_data %}
+                <tr class="border-t hover:bg-gray-50">
+                    <td class="px-4 py-2">{{ item.sesi.tanggal }}</td>
+                    <td class="px-4 py-2">
+                        <span class="px-2 py-1 {% if item.sesi.gender == 'ikhwan' %}bg-blue-100 text-blue-700{% else %}bg-pink-100 text-pink-700{% endif %} rounded-full text-xs font-medium">
+                            {{ item.sesi.gender | title }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-2">{{ item.sesi.judul_acara }}</td>
+                    <td class="px-4 py-2">
+                        {% if item.sesi.is_active %}
+                        <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Aktif</span>
+                        {% else %}
+                        <span class="px-2 py-1 bg-gray-200 text-gray-600 rounded-full text-xs font-medium">Ditutup</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2">
+                        {% if item.sesi.is_active %}
+                        <input type="text" id="link-{{ item.sesi.id }}" value="{{ request.url_root }}presensi/{{ item.sesi.gender }}/{{ item.sesi.token }}"
+                            class="text-xs bg-gray-100 px-2 py-1 rounded w-56" readonly>
+                        <button onclick="copyLink('link-{{ item.sesi.id }}')" class="text-blue-600 hover:text-blue-800 text-xs ml-1">Salin</button>
+                        {% else %}
+                        <input type="text" value="Sesi sudah ditutup"
+                            class="text-xs bg-gray-100 px-2 py-1 rounded w-56 text-gray-400" readonly disabled>
+                        <button disabled title="Sesi sudah ditutup" class="text-gray-400 cursor-not-allowed text-xs ml-1">Salin</button>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2">
+                        {% if item.sesi.is_active %}
+                        <form method="POST" action="{{ url_for('close_sesi') }}" class="inline">
+                            <input type="hidden" name="sesi_id" value="{{ item.sesi.id }}">
+                            <button type="submit" class="text-orange-600 hover:text-orange-800 text-xs font-medium">Tutup</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('delete_sesi') }}" class="inline"
+                              onsubmit="return confirm('Yakin hapus sesi ini? Semua data kehadiran di sesi ini akan ikut terhapus.')">
+                            <input type="hidden" name="sesi_id" value="{{ item.sesi.id }}">
+                            <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-medium">Hapus</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="bg-white rounded-lg shadow-sm border p-8 text-center mb-8">
+    <p class="text-gray-500">Belum ada sesi presensi. Silakan generate link terlebih dahulu.</p>
+</div>
+{% endif %}
+
+<div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-sm">
+        <h3 class="text-lg font-semibold mb-4">Edit Status Kehadiran</h3>
+        <form method="POST" action="{{ url_for('edit_kehadiran') }}">
+            <input type="hidden" name="kehadiran_id" id="editKehadiranId">
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Status Baru</label>
+                <select name="status_baru" id="editStatus" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="hadir_offline">Hadir Offline</option>
+                    <option value="hadir_online">Hadir Online</option>
+                    <option value="izin_disetujui">Izin (Disetujui)</option>
+                    <option value="alpha">Alpha</option>
+                </select>
+            </div>
+            <div class="flex gap-2">
+                <button type="button" onclick="closeEditModal()" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition">Batal</button>
+                <button type="submit" class="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openEditModal(id, currentStatus, izinMenunggu) {
+    document.getElementById('editKehadiranId').value = id;
+    document.getElementById('editModal').classList.remove('hidden');
+    var val = currentStatus;
+    if (izinMenunggu == '1' || izinMenunggu == 'True' || izinMenunggu == true) val = 'alpha';
+    document.getElementById('editStatus').value = val;
+}
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+}
+function copyLink(elementId) {
+    var el = document.getElementById(elementId);
+    el.select();
+    navigator.clipboard.writeText(el.value).then(function() {
+        alert('Link berhasil disalin!');
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Rekap - Absensi Mulazamah{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-800">Rekap Kehadiran</h1>
+        <p class="text-gray-500 text-sm">Laporan kehadiran peserta</p>
+    </div>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
+    <form method="GET" class="flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Dari Tanggal</label>
+            <input type="date" name="start_date" value="{{ start }}"
+                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Sampai Tanggal</label>
+            <input type="date" name="end_date" value="{{ end }}"
+                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+            <select name="gender"
+                class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="semua" {% if gender_filter == 'semua' %}selected{% endif %}>Semua</option>
+                <option value="ikhwan" {% if gender_filter == 'ikhwan' %}selected{% endif %}>Ikhwan</option>
+                <option value="akhwat" {% if gender_filter == 'akhwat' %}selected{% endif %}>Akhwat</option>
+            </select>
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-medium">
+            Tampilkan
+        </button>
+    </form>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm border overflow-x-auto mb-4">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-600">
+            <tr>
+                <th class="text-left px-4 py-3 font-medium">Nama</th>
+                <th class="text-left px-4 py-3 font-medium">Gender</th>
+                <th class="text-center px-4 py-3 font-medium">Hadir</th>
+                <th class="text-center px-4 py-3 font-medium">Izin</th>
+                <th class="text-center px-4 py-3 font-medium">Alpha</th>
+                <th class="text-center px-4 py-3 font-medium">% Hadir</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rekap_data %}
+            <tr class="border-t hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium">{{ r.nama }}</td>
+                <td class="px-4 py-3">
+                    <span class="px-2 py-1 {% if r.gender == 'ikhwan' %}bg-blue-100 text-blue-700{% else %}bg-pink-100 text-pink-700{% endif %} rounded-full text-xs font-medium">
+                        {{ r.gender | title }}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-center text-green-600 font-medium">{{ r.hadir }}</td>
+                <td class="px-4 py-3 text-center text-yellow-600 font-medium">{{ r.izin }}</td>
+                <td class="px-4 py-3 text-center text-red-500 font-medium">{{ r.alpha }}</td>
+                <td class="px-4 py-3 text-center">
+                    <span class="px-2 py-1 {% if r.pct >= 75 %}bg-green-100 text-green-700{% elif r.pct >= 50 %}bg-yellow-100 text-yellow-700{% else %}bg-red-100 text-red-700{% endif %} rounded-full text-xs font-medium">
+                        {{ r.pct }}%
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if not rekap_data %}
+<div class="bg-white rounded-lg shadow-sm border p-8 text-center">
+    <p class="text-gray-500">Tidak ada data untuk filter yang dipilih.</p>
+</div>
+{% endif %}
+
+{% if rekap_data %}
+<div class="mt-4">
+    <a href="{{ url_for('rekap_export', start_date=start, end_date=end, gender=gender_filter) }}"
+        class="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition font-medium">
+        Download CSV
+    </a>
+</div>
+{% endif %}
+{% endblock %}
