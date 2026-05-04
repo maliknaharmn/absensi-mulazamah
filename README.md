@@ -1,6 +1,6 @@
 # Absensi Mulazamah
 
-Website absensi untuk peserta Mulazamah dengan pemisahan link ikhwan & akhwat, dibangun menggunakan **Python Flask** dan **PostgreSQL** (dengan fallback SQLite untuk development lokal).
+Website absensi untuk peserta Mulazamah dengan sistem generate link, sehingga memudahkan admin dan peserta untuk mengisi absensi kehadiran, dengan pemisahan link ikhwan & akhwat,database admin berisi rekap kehaidran peserta, serta fitur-fitur lainnya untuk efisiensi dan efektivitas sesuai kebutuhan user. Dibangun menggunakan **Python Flask** dan **PostgreSQL** (dengan fallback SQLite untuk development lokal).
 
 ---
 
