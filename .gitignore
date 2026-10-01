@@ -6,3 +6,5 @@ instance/
 .env
 venv/
 .env.local
+.vercel
+.env*
