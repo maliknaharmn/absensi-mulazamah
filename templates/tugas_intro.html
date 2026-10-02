@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ task.judul }} - Tugas Mulazamah</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<main class="max-w-lg mx-auto px-4 py-10">
+    <div class="bg-white border rounded-xl p-6 shadow-sm">
+        <p class="text-sm text-blue-700 font-medium">Mulazamah Kitab "{{ task.kitab_judul }}"</p>
+        <h1 class="text-2xl font-bold mt-1">{{ task.judul }}</h1>
+        <p class="text-gray-600 mt-3">Waktu pengerjaan: {{ task.durasi_menit }} menit. Timer dimulai setelah Anda menekan Mulai. Jawaban tersimpan otomatis selama mengerjakan.</p>
+        <p class="text-sm text-gray-600 mt-2">Batas pengerjaan umum: <strong>{{ local_deadline(task.closes_at) }} WIB</strong>.</p>
+        {% if error %}<p class="mt-4 bg-red-100 text-red-700 rounded p-3 text-sm" role="alert">{{ error }}</p>{% endif %}
+        {% if not globally_open %}
+        <p class="mt-4 bg-amber-100 text-amber-900 rounded p-3 text-sm">Tugas sudah ditutup atau melewati batas waktu pengerjaan. Jika admin memberi akses khusus, masukkan identitas Anda untuk memeriksanya.</p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('start_task', token=task.token) }}" class="mt-6 space-y-4">
+            <label class="block text-sm">Nama lengkap
+                <input name="nama" value="{{ values.get('nama', '') }}" required autocomplete="name"
+                    class="block mt-1 w-full border rounded-lg px-3 py-2">
+            </label>
+            <label class="block text-sm">Nomor HP terdaftar
+                <input type="tel" name="no_hp" value="{{ values.get('no_hp', '') }}" required autocomplete="tel"
+                    class="block mt-1 w-full border rounded-lg px-3 py-2">
+            </label>
+            <button class="w-full bg-blue-600 text-white rounded-lg py-3 font-medium">Mulai Tugas</button>
+        </form>
+    </div>
+</main>
+</body>
+</html>

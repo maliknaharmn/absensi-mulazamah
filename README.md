@@ -29,6 +29,8 @@ Sistem ini memungkinkan pengurus (admin) untuk:
 | **No Backdate** | Tidak bisa buat presensi untuk tanggal kemarin |
 | **Close & Delete Sesi** | Tutup sesi (nonaktifkan link) atau hapus permanen |
 | **Dual Database** | PostgreSQL untuk production, SQLite untuk development |
+| **Judul Kitab** | Katalog kitab bersama untuk ikhwan dan akhwat; judul pertemuan ditulis terpisah |
+| **Penugasan** | Soal pilihan ganda dan esai, link publik, timer per peserta, simpan otomatis, dan rekap |
 
 ---
 
@@ -137,6 +139,24 @@ http://127.0.0.1:5001
 ```
 
 **Login:** `admin` / `mulazamah2026`
+
+### Memperbarui database yang sudah berisi data
+
+Jalankan migrasi tambahan sekali setelah memperbarui kode:
+
+```bash
+python3 migrate_mvp.py
+```
+
+Migrasi ini menambahkan katalog kitab dan tabel tugas tanpa menghapus sesi atau kehadiran lama. Sesi lama boleh tetap tanpa kitab; admin dapat mengaitkannya dari dashboard. Untuk PostgreSQL Neon, migrasi menggunakan `DATABASE_URL_UNPOOLED` bila tersedia. Jangan menjalankan ulang `init_db.py` pada database production karena skrip tersebut menulis ulang akun admin awal.
+
+### Penugasan
+
+Admin membuka menu **Tugas**, memilih kitab, mengisi judul, durasi 1–240 menit, dan batas pengerjaan kalender (WIB), lalu menambahkan hingga 30 soal pilihan ganda atau esai. Setelah link dibuat, peserta memasukkan nama dan nomor HP terdaftar, lalu menekan **Mulai Tugas**. Waktu dihitung dari saat itu, namun tetap berhenti pada batas kalender. Satu peserta hanya mendapat satu percobaan. Pilihan ganda diberi nilai otomatis; jawaban esai dapat dibaca dan ditandai telah ditinjau di rekap tugas.
+
+Admin dapat menutup atau membuka tugas untuk semua peserta di dashboard maupun halaman Tugas. Untuk peserta tertentu, buka **Rekap & peserta tertentu**, centang nama, lalu tutup atau buka dengan tenggat baru. Link yang sudah melewati batas menampilkan informasi penutupan. Saat admin membuka kembali, peserta yang sudah pernah mulai tetap tidak dapat mengulang. Peserta dengan akses khusus dapat memasukkan identitas di link yang sama meskipun akses umum ditutup.
+
+Jawaban disimpan saat peserta mengubah isian. Ketika waktu habis, browser mengirim formulir dan server mengunci percobaan sesuai tenggatnya. Jika tab ditutup atau koneksi terputus, jawaban terakhir yang berhasil tersimpan tetap menjadi hasil saat halaman atau rekap dibuka berikutnya.
 
 ---
 

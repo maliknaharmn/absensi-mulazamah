@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ task.judul }} - Tugas Mulazamah</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<main class="max-w-2xl mx-auto px-4 py-8">
+    <div class="bg-white border rounded-xl p-6 mb-4">
+        <p class="text-sm text-blue-700 font-medium">Mulazamah Kitab "{{ task.kitab_judul }}"</p>
+        <h1 class="text-2xl font-bold">{{ task.judul }}</h1>
+        {% if attempt.submitted_at %}
+        <div class="mt-5 bg-green-100 text-green-800 rounded-lg p-4">
+            <strong>Jawaban terkirim.</strong>
+            <p>Nilai pilihan ganda: {{ score[0] }}/{{ score[1] }} benar.
+                {% if questions | selectattr('type', 'equalto', 'essay') | list %}Jawaban esai menunggu tinjauan admin.{% endif %}
+            </p>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-600 mt-2">Sisa waktu: <strong id="timer" class="text-red-600" aria-live="polite"></strong></p>
+        <p id="saveStatus" class="text-xs text-gray-500 mt-1">Jawaban tersimpan otomatis.</p>
+        {% endif %}
+    </div>
+    {% if not attempt.submitted_at %}
+    <form id="answerForm" method="POST" action="{{ url_for('submit_task', token=task.token, attempt_token=attempt.attempt_token) }}" class="space-y-4">
+        {% for question in questions %}
+        {% set index = loop.index0 %}
+        <section class="bg-white border rounded-xl p-5">
+            <h2 class="font-semibold mb-3">{{ loop.index }}. {{ question.text }}</h2>
+            {% if question.type == 'mcq' %}
+                {% for option in question.options %}
+                <label class="flex gap-2 items-start border rounded-lg p-3 mb-2 cursor-pointer">
+                    <input type="radio" name="answer_{{ index }}" value="{{ loop.index0 }}"
+                        {% if answers.get(index | string) == loop.index0 | string %}checked{% endif %}>
+                    <span>{{ 'ABCD'[loop.index0] }}. {{ option }}</span>
+                </label>
+                {% endfor %}
+            {% else %}
+                <textarea name="answer_{{ index }}" rows="5" maxlength="5000" placeholder="Tulis jawaban Anda..."
+                    class="w-full border rounded-lg p-3">{{ answers.get(index | string, '') }}</textarea>
+            {% endif %}
+        </section>
+        {% endfor %}
+        <button id="submitButton" class="w-full bg-blue-600 text-white rounded-lg py-3 font-medium">Kirim Jawaban</button>
+    </form>
+    {% else %}
+    <p class="text-center text-gray-500 text-sm">Anda dapat menutup halaman ini.</p>
+    {% endif %}
+</main>
+{% if not attempt.submitted_at %}
+<script>
+const form = document.getElementById('answerForm');
+const timer = document.getElementById('timer');
+const status = document.getElementById('saveStatus');
+const deadline = performance.now() + {{ remaining_ms }};
+const autosaveUrl = {{ url_for('autosave_task', token=task.token, attempt_token=attempt.attempt_token) | tojson }};
+const statusUrl = {{ url_for('task_status', token=task.token, attempt_token=attempt.attempt_token) | tojson }};
+const count = {{ questions | length }};
+let saveTimer;
+let sending = false;
+let saving = false;
+let saveAgain = false;
+function answers() {
+    const data = new FormData(form);
+    const result = {};
+    for (let i = 0; i < count; i++) result[String(i)] = data.get('answer_' + i) || '';
+    return result;
+}
+function save() {
+    if (sending) return;
+    if (saving) { saveAgain = true; return; }
+    saving = true;
+    status.textContent = 'Menyimpan...';
+    fetch(autosaveUrl, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({answers: answers()}), keepalive: true
+    }).then(response => {
+        if (response.status === 409) { window.location.reload(); return; }
+        status.textContent = response.ok ? 'Jawaban tersimpan' : 'Koneksi terputus. Coba kirim jawaban sekarang.';
+    }).catch(() => { status.textContent = 'Koneksi terputus. Coba kirim jawaban sekarang.'; })
+      .finally(() => {
+          saving = false;
+          if (saveAgain && !sending) { saveAgain = false; save(); }
+      });
+}
+form.addEventListener('input', () => { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); });
+form.addEventListener('change', () => { clearTimeout(saveTimer); save(); });
+form.addEventListener('submit', () => { sending = true; clearTimeout(saveTimer); });
+function tick() {
+    const remaining = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
+    timer.textContent = String(Math.floor(remaining / 60)).padStart(2, '0') + ':' +
+        String(remaining % 60).padStart(2, '0');
+    if (remaining === 0 && !sending) {
+        sending = true;
+        clearTimeout(saveTimer);
+        document.getElementById('submitButton').disabled = true;
+        form.requestSubmit();
+    }
+}
+tick();
+setInterval(tick, 250);
+setInterval(() => {
+    if (sending) return;
+    fetch(statusUrl, {cache: 'no-store'}).then(response => response.json()).then(data => {
+        if (!data.active) window.location.reload();
+    }).catch(() => {});
+}, 5000);
+</script>
+{% endif %}
+</body>
+</html>

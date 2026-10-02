@@ -1,9 +1,11 @@
 import os
+import sys
 import sqlite3
 import secrets
 import csv
 import io
-from datetime import date, datetime
+import json
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from dotenv import load_dotenv
 from flask import (
@@ -15,6 +17,7 @@ from werkzeug.security import check_password_hash
 load_dotenv()
 
 app = Flask(__name__)
+sys.modules.setdefault('app', sys.modules[__name__])
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'absensi.db')
@@ -53,6 +56,44 @@ def eq(query, params=()):
     return cur
 
 
+def utcnow():
+    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+
+
+def display_title(judul, kitab_judul=None):
+    return f'Mulazamah Kitab "{kitab_judul}" - {judul}' if kitab_judul else judul
+
+
+app.jinja_env.globals['display_title'] = display_title
+
+
+def find_peserta(nama, no_hp, gender=None):
+    query = "SELECT * FROM peserta WHERE lower(nama_lengkap) = lower(?) AND is_active = TRUE"
+    params = [nama]
+    if gender:
+        query += " AND gender = ?"
+        params.append(gender)
+    matches = eq(query, params).fetchall()
+    if not matches:
+        return None, 'nama'
+    verified = [p for p in matches if p['no_hp'] and p['no_hp'] == no_hp]
+    if len(verified) == 1:
+        return verified[0], None
+    if len(verified) > 1:
+        return None, 'ambigu'
+    if len(matches) == 1 and not matches[0]['no_hp']:
+        return None, 'hp_kosong'
+    return None, 'hp'
+
+
+def sesi_with_kitab(token):
+    return eq("""
+        SELECT s.*, k.judul AS kitab_judul
+        FROM sesi_presensi s LEFT JOIN kitab k ON k.id = s.kitab_id
+        WHERE s.token = ? AND s.is_active = TRUE
+    """, (token,)).fetchone()
+
+
 @app.teardown_appcontext
 def close_db(exception):
     db = g.pop('db', None)
@@ -80,6 +121,7 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    username = ''
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
@@ -89,8 +131,10 @@ def login():
             session['admin_id'] = user['id']
             session['admin_username'] = user['username']
             return redirect(url_for('dashboard'), code=303)
+        if not user:
+            username = ''
         flash('Username atau password salah', 'error')
-    return render_template('login.html')
+    return render_template('login.html', username=username)
 
 
 @app.route('/logout')
@@ -106,8 +150,13 @@ def logout():
 def dashboard():
     today = date.today().isoformat()
 
-    cur = eq("SELECT * FROM sesi_presensi ORDER BY tanggal DESC, gender")
+    cur = eq("""
+        SELECT s.*, k.judul AS kitab_judul
+        FROM sesi_presensi s LEFT JOIN kitab k ON k.id = s.kitab_id
+        ORDER BY s.tanggal DESC, s.gender
+    """)
     all_sesi = cur.fetchall()
+    kitab = eq("SELECT * FROM kitab ORDER BY is_active DESC, judul").fetchall()
 
     sesi_data = []
     for s in all_sesi:
@@ -135,7 +184,12 @@ def dashboard():
             'is_today': str(s['tanggal']) == today
         })
 
-    return render_template('dashboard.html', sesi_data=sesi_data, today=today)
+    tugas = eq("""
+        SELECT t.*, k.judul AS kitab_judul FROM tugas t
+        JOIN kitab k ON k.id = t.kitab_id ORDER BY t.id DESC LIMIT 10
+    """).fetchall()
+    return render_template('dashboard.html', sesi_data=sesi_data, today=today,
+                           kitab=kitab, tugas=tugas)
 
 
 # ========== PRESENSI PUBLIC ==========
@@ -145,8 +199,7 @@ def presensi_form(gender, token):
     if gender not in ('ikhwan', 'akhwat'):
         return render_template('presensi.html', error='Link tidak valid'), 404
 
-    cur = eq("SELECT * FROM sesi_presensi WHERE token = ? AND is_active = TRUE", (token,))
-    sesi = cur.fetchone()
+    sesi = sesi_with_kitab(token)
     if not sesi:
         return render_template('presensi.html', error='Link tidak ditemukan atau sudah tidak aktif'), 404
     if sesi['gender'] != gender:
@@ -159,7 +212,8 @@ def presensi_form(gender, token):
         sesi=sesi,
         tanggal_fmt=tanggal_fmt,
         error=None,
-        success=False
+        success=False,
+        values={}
     )
 
 
@@ -171,25 +225,30 @@ def presensi_submit():
     status = request.form.get('status', '').strip()
     alasan = request.form.get('alasan_izin', '').strip()
 
-    cur = eq("SELECT * FROM sesi_presensi WHERE token = ? AND is_active = TRUE", (token,))
-    sesi = cur.fetchone()
+    sesi = sesi_with_kitab(token)
     if not sesi:
-        flash('Link tidak valid', 'error')
-        return redirect(url_for('presensi_form', gender='ikhwan', token=token), code=303)
+        return render_template('presensi.html', error='Link tidak valid', sesi=None), 404
 
-    cur2 = eq(
-        "SELECT * FROM peserta WHERE nama_lengkap = ? AND gender = ? AND is_active = TRUE",
-        (nama, sesi['gender'])
-    )
-    peserta = cur2.fetchone()
+    values = {'nama': nama, 'no_hp': no_hp, 'status': status, 'alasan_izin': alasan}
+    tanggal_fmt = datetime.strptime(str(sesi['tanggal']), '%Y-%m-%d').strftime('%d %B %Y')
 
-    if not peserta:
-        flash('Nama tidak ditemukan di daftar peserta', 'error')
-        return redirect(url_for('presensi_form', gender=sesi['gender'], token=token), code=303)
+    def invalid(message, clear=None):
+        if clear:
+            values[clear] = ''
+        return render_template(
+            'presensi.html', sesi=sesi, tanggal_fmt=tanggal_fmt,
+            form_error=message, error=None, success=False, values=values
+        ), 422
 
-    if peserta['no_hp'] and peserta['no_hp'] != no_hp:
-        flash('Nomor HP tidak cocok dengan data peserta', 'error')
-        return redirect(url_for('presensi_form', gender=sesi['gender'], token=token), code=303)
+    peserta, reason = find_peserta(nama, no_hp, sesi['gender'])
+    if reason == 'nama':
+        return invalid('Nama tidak ditemukan di daftar peserta', 'nama')
+    if reason == 'hp':
+        return invalid('Nomor HP tidak cocok dengan data peserta', 'no_hp')
+    if reason == 'hp_kosong':
+        return invalid('Nomor HP belum terdaftar. Hubungi admin untuk melengkapi data.', 'no_hp')
+    if reason:
+        return invalid('Nama dan nomor HP terdaftar lebih dari sekali. Hubungi admin.')
 
     cur3 = eq(
         "SELECT * FROM kehadiran WHERE sesi_id = ? AND peserta_id = ?",
@@ -198,8 +257,10 @@ def presensi_submit():
     existing = cur3.fetchone()
 
     if existing:
-        flash('Anda sudah mengisi presensi untuk sesi ini', 'error')
-        return redirect(url_for('presensi_form', gender=sesi['gender'], token=token), code=303)
+        return invalid('Anda sudah mengisi presensi untuk sesi ini')
+
+    if status not in ('hadir_offline', 'hadir_online', 'izin'):
+        return invalid('Pilih status kehadiran yang valid')
 
     if status == 'izin':
         status_akhir = 'alpha'
@@ -214,7 +275,7 @@ def presensi_submit():
     )
     g.db.commit()
 
-    return render_template('presensi.html', success=True, nama=nama, sesi=None, error=None)
+    return render_template('presensi.html', success=True, nama=peserta['nama_lengkap'], sesi=None, error=None)
 
 
 # ========== API: SEARCH PESERTA ==========
@@ -227,7 +288,7 @@ def search_peserta():
         return jsonify([])
 
     cur = eq(
-        "SELECT nama_lengkap FROM peserta WHERE gender = ? AND is_active = TRUE AND nama_lengkap LIKE ? ORDER BY nama_lengkap LIMIT 20",
+        "SELECT nama_lengkap FROM peserta WHERE gender = ? AND is_active = TRUE AND lower(nama_lengkap) LIKE lower(?) ORDER BY nama_lengkap LIMIT 20",
         (gender, f'%{q}%')
     )
     return jsonify([r['nama_lengkap'] for r in cur.fetchall()])
@@ -241,6 +302,7 @@ def generate_sesi():
     gender = request.form.get('gender', '').strip()
     tanggal = request.form.get('tanggal', '').strip()
     judul = request.form.get('judul', '').strip()
+    kitab_id = request.form.get('kitab_id', '').strip()
 
     if gender not in ('ikhwan', 'akhwat'):
         flash('Gender tidak valid', 'error')
@@ -260,15 +322,70 @@ def generate_sesi():
         flash('Judul acara minimal 5 karakter', 'error')
         return redirect(url_for('dashboard'), code=303)
 
+    selected = eq("SELECT id FROM kitab WHERE id = ? AND is_active = TRUE", (kitab_id,)).fetchone() if kitab_id.isdigit() else None
+    if not selected:
+        flash('Pilih judul kitab yang aktif', 'error')
+        return redirect(url_for('dashboard'), code=303)
+
     token = secrets.token_urlsafe(8)
 
     eq(
-        "INSERT INTO sesi_presensi (gender, tanggal, judul_acara, token) VALUES (?, ?, ?, ?)",
-        (gender, tanggal, judul, token)
+        "INSERT INTO sesi_presensi (gender, tanggal, judul_acara, token, kitab_id) VALUES (?, ?, ?, ?, ?)",
+        (gender, tanggal, judul, token, selected['id'])
     )
     g.db.commit()
 
     flash(f'Link berhasil dibuat untuk {gender}', 'success')
+    return redirect(url_for('dashboard'), code=303)
+
+
+@app.route('/api/kitab', methods=['POST'])
+@login_required
+def manage_kitab():
+    action = request.form.get('action', '')
+    judul = request.form.get('judul', '').strip()
+    kitab_id = request.form.get('kitab_id', '').strip()
+    if action in ('add', 'rename'):
+        if len(judul) < 2 or len(judul) > 150:
+            flash('Judul kitab harus 2–150 karakter', 'error')
+            return redirect(url_for('dashboard'), code=303)
+        duplicate = eq(
+            "SELECT id FROM kitab WHERE lower(judul) = lower(?)",
+            (judul,)
+        ).fetchone()
+        if duplicate and (action == 'add' or str(duplicate['id']) != kitab_id):
+            flash('Judul kitab sudah ada', 'error')
+            return redirect(url_for('dashboard'), code=303)
+        if action == 'add':
+            eq("INSERT INTO kitab (judul) VALUES (?)", (judul,))
+        elif kitab_id.isdigit():
+            eq("UPDATE kitab SET judul = ? WHERE id = ?", (judul, kitab_id))
+    elif action == 'toggle' and kitab_id.isdigit():
+        if IS_PG:
+            eq("UPDATE kitab SET is_active = NOT is_active WHERE id = ?", (kitab_id,))
+        else:
+            eq("UPDATE kitab SET is_active = 1 - is_active WHERE id = ?", (kitab_id,))
+    else:
+        flash('Aksi kitab tidak valid', 'error')
+        return redirect(url_for('dashboard'), code=303)
+    g.db.commit()
+    flash('Daftar kitab diperbarui', 'success')
+    return redirect(url_for('dashboard'), code=303)
+
+
+@app.route('/api/sesi-kitab', methods=['POST'])
+@login_required
+def set_sesi_kitab():
+    sesi_id = request.form.get('sesi_id', '').strip()
+    kitab_id = request.form.get('kitab_id', '').strip()
+    if not sesi_id.isdigit() or not kitab_id.isdigit():
+        flash('Pilihan sesi atau kitab tidak valid', 'error')
+    elif eq("SELECT id FROM kitab WHERE id = ?", (kitab_id,)).fetchone():
+        eq("UPDATE sesi_presensi SET kitab_id = ? WHERE id = ?", (kitab_id, sesi_id))
+        g.db.commit()
+        flash('Kitab sesi diperbarui', 'success')
+    else:
+        flash('Kitab tidak ditemukan', 'error')
     return redirect(url_for('dashboard'), code=303)
 
 
@@ -388,10 +505,16 @@ def api_peserta():
     elif action == 'delete':
         pid = request.form.get('id')
         if pid:
-            eq("DELETE FROM kehadiran WHERE peserta_id = ?", (pid,))
-            eq("DELETE FROM peserta WHERE id = ?", (pid,))
-            g.db.commit()
-            flash('Peserta berhasil dihapus', 'success')
+            task_history = eq(
+                "SELECT id FROM percobaan_tugas WHERE peserta_id = ? LIMIT 1", (pid,)
+            ).fetchone()
+            if task_history:
+                flash('Peserta sudah memiliki riwayat tugas. Nonaktifkan peserta agar rekap tetap tersimpan.', 'error')
+            else:
+                eq("DELETE FROM kehadiran WHERE peserta_id = ?", (pid,))
+                eq("DELETE FROM peserta WHERE id = ?", (pid,))
+                g.db.commit()
+                flash('Peserta berhasil dihapus', 'success')
 
     return redirect(url_for('master_peserta'), code=303)
 
@@ -404,6 +527,17 @@ def rekap():
     start = request.args.get('start_date', date.today().replace(day=1).isoformat())
     end = request.args.get('end_date', date.today().isoformat())
     gender_filter = request.args.get('gender', 'semua')
+    sesi_query = """
+        SELECT s.*, k.judul AS kitab_judul
+        FROM sesi_presensi s LEFT JOIN kitab k ON k.id = s.kitab_id
+        WHERE s.tanggal BETWEEN ? AND ?
+    """
+    sesi_params = [start, end]
+    if gender_filter in ('ikhwan', 'akhwat'):
+        sesi_query += " AND s.gender = ?"
+        sesi_params.append(gender_filter)
+    sesi_query += " ORDER BY s.tanggal DESC, s.gender"
+    sesi_list = eq(sesi_query, sesi_params).fetchall()
 
     query = """
         SELECT p.id as peserta_id, p.nama_lengkap, p.gender,
@@ -439,7 +573,10 @@ def rekap():
             'pct': pct
         })
 
-    return render_template('rekap.html', rekap_data=rekap_data, start=start, end=end, gender_filter=gender_filter)
+    return render_template(
+        'rekap.html', rekap_data=rekap_data, sesi_list=sesi_list,
+        start=start, end=end, gender_filter=gender_filter
+    )
 
 
 @app.route('/rekap/export')
@@ -496,6 +633,9 @@ def health():
         return jsonify({"status": "ok", "database": "postgresql" if IS_PG else "sqlite"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+import tasks  # noqa: E402 — register assignment routes after app helpers exist
 
 
 if __name__ == '__main__':

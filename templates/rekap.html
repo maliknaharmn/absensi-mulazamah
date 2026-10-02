@@ -35,6 +35,19 @@
     </form>
 </div>
 
+<div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
+    <h2 class="font-semibold mb-3">Pertemuan dalam Periode Ini</h2>
+    {% if sesi_list %}
+    <ul class="space-y-1 text-sm">
+        {% for sesi in sesi_list %}
+        <li>{{ sesi.tanggal }} · {{ sesi.gender | title }} · {{ display_title(sesi.judul_acara, sesi.kitab_judul) }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500">Belum ada pertemuan pada periode ini.</p>
+    {% endif %}
+</div>
+
 <div class="bg-white rounded-lg shadow-sm border overflow-x-auto mb-4">
     <table class="w-full text-sm">
         <thead class="bg-gray-50 text-gray-600">

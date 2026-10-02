@@ -3,6 +3,7 @@ import sys
 import sqlite3
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash
+from migrate_mvp import migrate
 
 load_dotenv()
 
@@ -49,10 +50,14 @@ CREATE TABLE IF NOT EXISTS kehadiran (
 """
 
 DROP_TABLES = [
+    "DROP TABLE IF EXISTS percobaan_tugas CASCADE",
+    "DROP TABLE IF EXISTS tugas_akses CASCADE",
+    "DROP TABLE IF EXISTS tugas CASCADE",
     "DROP TABLE IF EXISTS kehadiran CASCADE",
     "DROP TABLE IF EXISTS sesi_presensi CASCADE",
     "DROP TABLE IF EXISTS peserta CASCADE",
     "DROP TABLE IF EXISTS users CASCADE",
+    "DROP TABLE IF EXISTS kitab CASCADE",
 ]
 
 CREATE_TABLES = [
@@ -78,7 +83,7 @@ def init_sqlite():
     cur = conn.cursor()
 
     if DESTRUCTIVE:
-        cur.executescript("DROP TABLE IF EXISTS kehadiran; DROP TABLE IF EXISTS sesi_presensi; DROP TABLE IF EXISTS peserta; DROP TABLE IF EXISTS users;")
+        cur.executescript("DROP TABLE IF EXISTS percobaan_tugas; DROP TABLE IF EXISTS tugas_akses; DROP TABLE IF EXISTS tugas; DROP TABLE IF EXISTS kehadiran; DROP TABLE IF EXISTS sesi_presensi; DROP TABLE IF EXISTS peserta; DROP TABLE IF EXISTS users; DROP TABLE IF EXISTS kitab;")
 
     cur.executescript("""
     CREATE TABLE IF NOT EXISTS users (
@@ -132,6 +137,7 @@ def init_sqlite():
             pass
 
     conn.commit()
+    migrate(conn, False)
     conn.close()
     print(f"✅ SQLite database initialized at {db_path}")
 
@@ -150,6 +156,7 @@ def init_postgres():
     for stmt in CREATE_TABLES:
         cur.execute(stmt)
     conn.commit()
+    migrate(conn, True)
 
     cur.execute("DELETE FROM users WHERE username = %s", (ADMIN_USERNAME,))
     cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)",
