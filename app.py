@@ -12,7 +12,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     session, flash, jsonify, Response, g
 )
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
 
@@ -101,6 +101,17 @@ def close_db(exception):
         db.close()
 
 
+@app.before_request
+def validate_admin_session():
+    """Revoke every older signed session after an admin password change."""
+    admin_id = session.get('admin_id')
+    if admin_id is None:
+        return
+    user = eq("SELECT session_version FROM users WHERE id = ?", (admin_id,)).fetchone()
+    if not user or session.get('session_version') != user['session_version']:
+        session.clear()
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -128,8 +139,10 @@ def login():
         cur = eq("SELECT * FROM users WHERE username = ?", (username,))
         user = cur.fetchone()
         if user and check_password_hash(user['password_hash'], password):
+            session.clear()
             session['admin_id'] = user['id']
             session['admin_username'] = user['username']
+            session['session_version'] = user['session_version']
             return redirect(url_for('dashboard'), code=303)
         if not user:
             username = ''
@@ -141,6 +154,49 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'), code=303)
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    csrf_token = session.setdefault('settings_csrf', secrets.token_urlsafe(32))
+    if request.method == 'GET':
+        return render_template('settings.html', csrf_token=csrf_token)
+
+    submitted_token = request.form.get('csrf_token', '')
+    if not secrets.compare_digest(csrf_token, submitted_token):
+        return render_template('settings.html', csrf_token=csrf_token,
+                               error='Sesi formulir tidak valid. Muat ulang halaman lalu coba lagi.'), 400
+
+    current = request.form.get('current_password', '')
+    new = request.form.get('new_password', '')
+    confirmation = request.form.get('confirm_password', '')
+    user = eq("SELECT password_hash FROM users WHERE id = ?", (session['admin_id'],)).fetchone()
+    if not user or not check_password_hash(user['password_hash'], current):
+        error = 'Password saat ini tidak sesuai.'
+    elif not 12 <= len(new) <= 128:
+        error = 'Password baru harus 12–128 karakter.'
+    elif check_password_hash(user['password_hash'], new):
+        error = 'Password baru harus berbeda dari password saat ini.'
+    elif new != confirmation:
+        error = 'Konfirmasi password baru tidak cocok.'
+    else:
+        updated = eq("""
+            UPDATE users
+            SET password_hash = ?, session_version = session_version + 1
+            WHERE id = ? AND password_hash = ?
+        """, (generate_password_hash(new), session['admin_id'], user['password_hash']))
+        if updated.rowcount == 1:
+            g.db.commit()
+            session.clear()
+            flash('Password berhasil diubah. Silakan login kembali.', 'success')
+            return redirect(url_for('login'), code=303)
+        g.db.rollback()
+        session.clear()
+        flash('Password berubah di sesi lain. Silakan login kembali.', 'error')
+        return redirect(url_for('login'), code=303)
+
+    return render_template('settings.html', csrf_token=csrf_token, error=error), 422
 
 
 # ========== DASHBOARD ==========

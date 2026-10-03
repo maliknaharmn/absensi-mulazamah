@@ -138,7 +138,7 @@ python3 app.py
 http://127.0.0.1:5001
 ```
 
-**Login:** `admin` / `mulazamah2026`
+**Login awal:** username `admin`; password mengikuti `ADMIN_PASSWORD` (default lokal: `mulazamah2026`). Segera ganti melalui menu **Settings**.
 
 ### Memperbarui database yang sudah berisi data
 
@@ -148,7 +148,13 @@ Jalankan migrasi tambahan sekali setelah memperbarui kode:
 python3 migrate_mvp.py
 ```
 
-Migrasi ini menambahkan katalog kitab dan tabel tugas tanpa menghapus sesi atau kehadiran lama. Sesi lama boleh tetap tanpa kitab; admin dapat mengaitkannya dari dashboard. Untuk PostgreSQL Neon, migrasi menggunakan `DATABASE_URL_UNPOOLED` bila tersedia. Jangan menjalankan ulang `init_db.py` pada database production karena skrip tersebut menulis ulang akun admin awal.
+Migrasi ini menambahkan katalog kitab dan tabel tugas tanpa menghapus sesi atau kehadiran lama. Sesi lama boleh tetap tanpa kitab; admin dapat mengaitkannya dari dashboard. Untuk PostgreSQL Neon, migrasi menggunakan `DATABASE_URL_UNPOOLED` bila tersedia.
+
+Untuk menambahkan versi sesi admin pada database yang sudah ada, jalankan `python3 migrate_admin_settings.py` sebelum deploy kode terbaru. Migrasi ini tidak mengubah password lama. Sesi yang dibuat sebelum rilis ini perlu login ulang sekali.
+
+### Settings Admin
+
+Admin yang sudah login dapat membuka **Settings** untuk mengganti password. Isi password saat ini, password baru 12–128 karakter yang berbeda, dan konfirmasinya. Setelah berhasil, semua sesi admin di seluruh perangkat berakhir dan harus login kembali. Username tidak berubah. Menjalankan ulang `init_db.py` tanpa `--destructive` tidak lagi menimpa password atau ID akun yang ada; `ADMIN_PASSWORD` hanya dipakai saat membuat akun awal. Jangan gunakan `--destructive` pada database production karena opsi itu menghapus data.
 
 ### Penugasan
 

@@ -1,14 +1,19 @@
 import json
+import io
 import os
+import re
 import sqlite3
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from werkzeug.security import generate_password_hash
 
 import app as module
+import init_db
+from migrate_admin_settings import migrate as migrate_admin_settings
 from migrate_mvp import migrate
 
 
@@ -43,6 +48,8 @@ class MvpFlowTests(unittest.TestCase):
         conn.commit()
         migrate(conn, False)
         migrate(conn, False)
+        migrate_admin_settings(conn, False)
+        migrate_admin_settings(conn, False)
         conn.close()
         module.app.config['TESTING'] = True
         self.client = module.app.test_client()
@@ -69,6 +76,76 @@ class MvpFlowTests(unittest.TestCase):
             'username': 'tidakada', 'password': 'password123'
         })
         self.assertNotIn(b'value="tidakada"', wrong_username.data)
+
+    def test_settings_change_password_revokes_all_sessions(self):
+        self.assertEqual(self.client.get('/settings').status_code, 303)
+        self.assertEqual(self.client.post('/settings', data={}).status_code, 303)
+        self.login()
+        other = module.app.test_client()
+        other.post('/login', data={'username': 'admin', 'password': 'password123'})
+        page = self.client.get('/settings')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'Settings', page.data)
+        self.assertIn(b'Password saat ini', page.data)
+        token = re.search(rb'name="csrf_token" value="([^"]+)"', page.data).group(1).decode()
+        form = {
+            'csrf_token': token,
+            'current_password': 'password123',
+            'new_password': 'passwordbaru123',
+            'confirm_password': 'passwordbaru123'
+        }
+
+        self.assertEqual(self.client.post('/settings', data={**form, 'csrf_token': 'invalid'}).status_code, 400)
+        wrong_current = self.client.post('/settings', data={**form, 'current_password': 'wrong-secret'})
+        self.assertEqual(wrong_current.status_code, 422)
+        self.assertNotIn(b'wrong-secret', wrong_current.data)
+        self.assertNotIn(b'passwordbaru123', wrong_current.data)
+        mismatch = self.client.post('/settings', data={**form, 'confirm_password': 'tidak-cocok'})
+        self.assertEqual(mismatch.status_code, 422)
+        self.assertEqual(self.client.post('/settings', data={**form, 'new_password': 'short'}).status_code, 422)
+        self.assertEqual(self.client.post('/settings', data={
+            **form, 'new_password': 'password123', 'confirm_password': 'password123'
+        }).status_code, 422)
+        self.assertEqual(self.sql('SELECT session_version FROM users WHERE id = 1')['session_version'], 0)
+
+        success = self.client.post('/settings', data=form)
+        self.assertEqual(success.status_code, 303)
+        self.assertIn('/login', success.headers['Location'])
+        self.assertEqual(self.sql('SELECT session_version FROM users WHERE id = 1')['session_version'], 1)
+        self.assertEqual(self.client.get('/dashboard').status_code, 303)
+        self.assertEqual(other.get('/tugas-admin').status_code, 303)
+        self.assertEqual(other.get('/settings').status_code, 303)
+        old_login = self.client.post('/login', data={'username': 'admin', 'password': 'password123'})
+        self.assertEqual(old_login.status_code, 200)
+        new_login = self.client.post('/login', data={'username': 'admin', 'password': 'passwordbaru123'})
+        self.assertEqual(new_login.status_code, 303)
+        self.assertEqual(self.client.get('/settings').status_code, 200)
+
+    def test_legacy_session_and_initializer_preserves_admin_password(self):
+        with self.client.session_transaction() as browser_session:
+            browser_session['admin_id'] = 1
+            browser_session['admin_username'] = 'admin'
+        self.assertEqual(self.client.get('/dashboard').status_code, 303)
+
+        db_path = os.path.join(self.temp.name, 'init-test.db')
+        with redirect_stdout(io.StringIO()):
+            init_db.init_sqlite(db_path)
+        conn = sqlite3.connect(db_path)
+        custom_hash = generate_password_hash('password-khusus-aman')
+        conn.execute("UPDATE users SET password_hash = ?, session_version = 3 WHERE username = 'admin'", (custom_hash,))
+        original_id = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()[0]
+        conn.commit()
+        conn.close()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            init_db.init_sqlite(db_path)
+        self.assertNotIn('password-khusus-aman', output.getvalue())
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT id, password_hash, session_version FROM users WHERE username = 'admin'").fetchone()
+        participant_count = conn.execute("SELECT COUNT(*) FROM peserta").fetchone()[0]
+        conn.close()
+        self.assertEqual(row, (original_id, custom_hash, 3))
+        self.assertEqual(participant_count, len(init_db.SAMPLE_PESERTA))
 
     def test_kitab_and_presensi_case_insensitive_and_retention(self):
         self.login()

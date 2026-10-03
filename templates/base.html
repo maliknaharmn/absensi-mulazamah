@@ -16,6 +16,7 @@
                 <a href="{{ url_for('master_peserta') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint == 'master_peserta' %}text-blue-600 font-semibold{% endif %}">Peserta</a>
                 <a href="{{ url_for('rekap') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint == 'rekap' %}text-blue-600 font-semibold{% endif %}">Rekap</a>
                 <a href="{{ url_for('admin_tasks') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint in ('admin_tasks', 'task_results') %}text-blue-600 font-semibold{% endif %}">Tugas</a>
+                <a href="{{ url_for('settings') }}" class="text-gray-600 hover:text-blue-600 {% if request.endpoint == 'settings' %}text-blue-600 font-semibold{% endif %}">Settings</a>
                 <a href="{{ url_for('logout') }}" class="text-red-500 hover:text-red-700">Logout</a>
             </div>
         </div>

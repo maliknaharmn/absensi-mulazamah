@@ -4,6 +4,7 @@ import sqlite3
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash
 from migrate_mvp import migrate
+from migrate_admin_settings import migrate as migrate_admin_settings
 
 load_dotenv()
 
@@ -61,7 +62,7 @@ DROP_TABLES = [
 ]
 
 CREATE_TABLES = [
-    "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, session_version INTEGER NOT NULL DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS peserta (id SERIAL PRIMARY KEY, nama_lengkap TEXT NOT NULL, gender TEXT NOT NULL CHECK(gender IN ('ikhwan', 'akhwat')), no_hp TEXT, is_active BOOLEAN DEFAULT TRUE)",
     "CREATE TABLE IF NOT EXISTS sesi_presensi (id SERIAL PRIMARY KEY, gender TEXT NOT NULL CHECK(gender IN ('ikhwan', 'akhwat')), tanggal DATE NOT NULL, judul_acara TEXT NOT NULL, token TEXT UNIQUE NOT NULL, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())",
     "CREATE TABLE IF NOT EXISTS kehadiran (id SERIAL PRIMARY KEY, sesi_id INTEGER REFERENCES sesi_presensi(id) ON DELETE CASCADE, peserta_id INTEGER REFERENCES peserta(id) ON DELETE CASCADE, status_akhir TEXT NOT NULL CHECK(status_akhir IN ('hadir_offline', 'hadir_online', 'izin_disetujui', 'alpha')), izin_menunggu BOOLEAN DEFAULT FALSE, alasan_izin TEXT, no_hp_terinput TEXT, submitted_at TIMESTAMP DEFAULT NOW(), UNIQUE(sesi_id, peserta_id))",
@@ -75,8 +76,8 @@ SAMPLE_PESERTA = [
 ]
 
 
-def init_sqlite():
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'absensi.db')
+def init_sqlite(db_path=None):
+    db_path = db_path or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'absensi.db')
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     conn = sqlite3.connect(db_path)
@@ -89,7 +90,8 @@ def init_sqlite():
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL
+        password_hash TEXT NOT NULL,
+        session_version INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS peserta (
@@ -125,16 +127,14 @@ def init_sqlite():
     );
     """)
 
-    cur.execute("DELETE FROM users WHERE username = ?", (ADMIN_USERNAME,))
-    cur.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)",
+    migrate_admin_settings(conn, False)
+    cur.execute("INSERT INTO users (username, password_hash) VALUES (?, ?) ON CONFLICT(username) DO NOTHING",
                 (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD)))
 
-    for nama, gender, no_hp, active in SAMPLE_PESERTA:
-        try:
+    if not cur.execute("SELECT 1 FROM peserta LIMIT 1").fetchone():
+        for nama, gender, no_hp, active in SAMPLE_PESERTA:
             cur.execute("INSERT INTO peserta (nama_lengkap, gender, no_hp, is_active) VALUES (?, ?, ?, ?)",
                         (nama, gender, no_hp, 1 if active else 0))
-        except sqlite3.IntegrityError:
-            pass
 
     conn.commit()
     migrate(conn, False)
@@ -157,16 +157,18 @@ def init_postgres():
         cur.execute(stmt)
     conn.commit()
     migrate(conn, True)
+    migrate_admin_settings(conn, True)
 
-    cur.execute("DELETE FROM users WHERE username = %s", (ADMIN_USERNAME,))
-    cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+    cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s) ON CONFLICT(username) DO NOTHING",
                 (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD)))
 
-    for nama, gender, no_hp, active in SAMPLE_PESERTA:
-        cur.execute(
-            "INSERT INTO peserta (nama_lengkap, gender, no_hp, is_active) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
-            (nama, gender, no_hp, active)
-        )
+    cur.execute("SELECT 1 FROM peserta LIMIT 1")
+    if not cur.fetchone():
+        for nama, gender, no_hp, active in SAMPLE_PESERTA:
+            cur.execute(
+                "INSERT INTO peserta (nama_lengkap, gender, no_hp, is_active) VALUES (%s, %s, %s, %s)",
+                (nama, gender, no_hp, active)
+            )
 
     conn.commit()
     conn.close()
@@ -183,7 +185,6 @@ if __name__ == '__main__':
     else:
         init_sqlite()
 
-    print(f"\n📋 Admin credentials:")
-    print(f"   Username: {ADMIN_USERNAME}")
-    print(f"   Password: {ADMIN_PASSWORD}")
+    print(f"\n📋 Admin username: {ADMIN_USERNAME}")
+    print("   Password tidak ditampilkan. ADMIN_PASSWORD hanya dipakai saat akun pertama kali dibuat.")
     print(f"\n💡 Use --destructive flag to drop and recreate all tables")
